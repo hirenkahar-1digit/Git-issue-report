@@ -52,7 +52,7 @@ test.describe('Login page UI', () => {
   test("Should display forgotpasswordlabel  properly ", async () => {
 
     await expect(loginPage.forgotpasswordlabel).toBeVisible();
-    await expect(loginPage.forgotpasswordlabel).toHaveText('Forgot your password?')
+    await expect(loginPage.forgotpasswordlabel).toHaveText('Forgot your password?1')
     console.log("forgotpasswordlabel   is verified")
 
   });
@@ -60,7 +60,7 @@ test.describe('Login page UI', () => {
   test("Should display Signin Button properly ", async () => {
 
     await expect(loginPage.signINButton).toBeVisible();
-    await expect(loginPage.signINButton).toHaveText('Sign in');
+    await expect(loginPage.signINButton).toHaveText('Sign in1');
     console.log("Signin Button   is verified")
 
 
