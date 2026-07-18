@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       issues: write
       
     steps:
@@ -53,6 +53,23 @@ jobs:
           console.log(findFailedTitle(results.suites) || 'Unknown test');
         ")
         echo "test_title=$TITLE" >> "$GITHUB_OUTPUT"
+
+    - name: Commit and push screenshot
+      if: steps.playwright.outcome == 'failure'
+      run: |
+        mkdir -p .github/issue-screenshots
+        # Find the first screenshot in test-results
+        SCREENSHOT=$(find test-results -name "*-failure.png" | head -n 1)
+        if [ -n "$SCREENSHOT" ]; then
+          cp "$SCREENSHOT" .github/issue-screenshots/failure-${{ github.run_id }}.png
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/issue-screenshots/failure-${{ github.run_id }}.png
+          git commit -m "Add test failure screenshot for run ${{ github.run_id }}"
+          git push
+        else
+          echo "No screenshot found."
+        fi
 
     - name: Create GitHub Issue with screenshot
       if: steps.playwright.outcome == 'failure'
