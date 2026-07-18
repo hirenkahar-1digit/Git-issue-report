@@ -62,94 +62,74 @@ jobs:
           }
 
           const failed = findFailedTests(results.suites);
-          let titleStr = '';
-          let errorStr = '';
-          
-          if (failed.length > 0) {
-             titleStr = failed.length === 1 ? failed[0].title : \`Multiple failures (\${failed.length} tests)\`;
-             errorStr = failed.map((f, i) => \`### \${i+1}. \${f.title}\n\n\` + f.error).join('\n\n---\n\n');
-          } else {
-             titleStr = 'Unknown test';
-             errorStr = 'No error details found.';
-          }
-          
-          fs.writeFileSync('test_title.txt', titleStr);
-          fs.writeFileSync('test_error.txt', errorStr);
+          fs.writeFileSync('failed_tests.json', JSON.stringify(failed));
         "
-        echo "test_title=$(cat test_title.txt)" >> "$GITHUB_OUTPUT"
-        
-        echo 'test_error<<EOF' >> "$GITHUB_OUTPUT"
-        cat test_error.txt >> "$GITHUB_OUTPUT"
-        echo 'EOF' >> "$GITHUB_OUTPUT"
 
     - name: Commit and push screenshot
       if: steps.playwright.outcome == 'failure'
       run: |
         mkdir -p .github/issue-screenshots
-        i=1
+        HAS_SCREENSHOTS=0
         for SCREENSHOT in test-results/*-failure.png; do
           if [ -f "$SCREENSHOT" ]; then
-            DEST=".github/issue-screenshots/failure-${{ github.run_id }}-${i}.png"
+            BASENAME=$(basename "$SCREENSHOT" -failure.png)
+            DEST=".github/issue-screenshots/${BASENAME}-failure-${{ github.run_id }}.png"
             cp "$SCREENSHOT" "$DEST"
             git add "$DEST"
-            i=$((i+1))
+            HAS_SCREENSHOTS=1
           fi
         done
         
-        if [ $i -gt 1 ]; then
+        if [ $HAS_SCREENSHOTS -eq 1 ]; then
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Add test failure screenshots for run ${{ github.run_id }}"
           git push
-          echo "SCREENSHOT_COUNT=$((i-1))" >> "$GITHUB_ENV"
         else
           echo "No screenshot found."
-          echo "SCREENSHOT_COUNT=0" >> "$GITHUB_ENV"
         fi
 
-    - name: Create GitHub Issue with screenshot
+    - name: Create GitHub Issues
       if: steps.playwright.outcome == 'failure'
       uses: actions/github-script@v7
       env:
         RUN_ID: ${{ github.run_id }}
-        TEST_TITLE: ${{ steps.extract.outputs.test_title }}
-        TEST_ERROR: ${{ steps.extract.outputs.test_error }}
       with:
         script: |
+          const fs = require('fs');
+          const failures = JSON.parse(fs.readFileSync('failed_tests.json', 'utf8'));
+          if (failures.length === 0) return;
+
           const runId = process.env.RUN_ID;
-          const testTitle = process.env.TEST_TITLE;
-          const testError = process.env.TEST_ERROR;
           const branch = context.ref.replace('refs/heads/', '');
           const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
           
-          const count = parseInt(process.env.SCREENSHOT_COUNT || '0', 10);
-          const screenshotsMd = [];
-          for (let i = 1; i <= count; i++) {
-             const imgUrl = `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${branch}/.github/issue-screenshots/failure-${runId}-${i}.png`;
-             screenshotsMd.push(`![Failure Screenshot ${i}](${imgUrl})`);
-          }
+          for (const failure of failures) {
+             const safeTitle = failure.title.replace(/[^a-z0-9-_]/gi, '_');
+             const imgUrl = `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${branch}/.github/issue-screenshots/${safeTitle}-failure-${runId}.png`;
 
-          await github.rest.issues.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            title: `Playwright test failed: ${testTitle}`,
-            body: [
-              `**Playwright test run failed** on commit \`${context.sha}\`.`,
-              '',
-              `**Test:** ${testTitle}`,
-              '',
-              '**Error Details:**',
-              '<details><summary>Click to expand errors</summary>',
-              '',
-              '```text',
-              testError,
-              '```',
-              '',
-              '</details>',
-              '',
-              ...screenshotsMd,
-              '',
-              `[View full workflow run & download test results](${runUrl})`,
-              `Triggered by: @${context.actor}`
-            ].join('\n')
-          });
+             await github.rest.issues.create({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               title: `Playwright test failed: ${failure.title}`,
+               body: [
+                 `**Playwright test run failed** on commit \`${context.sha}\`.`,
+                 '',
+                 `**Test:** ${failure.title}`,
+                 '',
+                 '**Error Details:**',
+                 '<details><summary>Click to expand error</summary>',
+                 '',
+                 '```text',
+                 failure.error,
+                 '```',
+                 '',
+                 '</details>',
+                 '',
+                 `![Failure Screenshot](${imgUrl})`,
+                 '',
+                 `[View full workflow run & download test results](${runUrl})`,
+                 `Triggered by: @${context.actor}`
+               ].join('\n')
+             });
+          }
