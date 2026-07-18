@@ -44,28 +44,37 @@ jobs:
           const fs = require('fs');
           const results = JSON.parse(fs.readFileSync('test-results.json', 'utf8'));
 
-          function findFailedTest(suites) {
+          function findFailedTests(suites, failedTests = []) {
             for (const suite of suites) {
               for (const spec of suite.specs || []) {
                 for (const test of spec.tests || []) {
                   const failedResult = test.results?.find(r => r.status !== 'passed');
-                  if (failedResult) return { title: spec.title, error: failedResult.error?.message || 'No error message' };
+                  if (failedResult) {
+                     failedTests.push({ title: spec.title, error: failedResult.error?.message || 'No error message' });
+                  }
                 }
               }
               if (suite.suites) {
-                const nested = findFailedTest(suite.suites);
-                if (nested) return nested;
+                findFailedTests(suite.suites, failedTests);
               }
             }
-            return null;
+            return failedTests;
           }
 
-          const failed = findFailedTest(results.suites);
-          const title = failed ? failed.title : 'Unknown test';
-          const errorMsg = failed ? failed.error : 'No error details found.';
+          const failed = findFailedTests(results.suites);
+          let titleStr = '';
+          let errorStr = '';
           
-          fs.writeFileSync('test_title.txt', title);
-          fs.writeFileSync('test_error.txt', errorMsg);
+          if (failed.length > 0) {
+             titleStr = failed.length === 1 ? failed[0].title : \`Multiple failures (\${failed.length} tests)\`;
+             errorStr = failed.map((f, i) => \`### \${i+1}. \${f.title}\n\n\` + f.error).join('\n\n---\n\n');
+          } else {
+             titleStr = 'Unknown test';
+             errorStr = 'No error details found.';
+          }
+          
+          fs.writeFileSync('test_title.txt', titleStr);
+          fs.writeFileSync('test_error.txt', errorStr);
         "
         echo "test_title=$(cat test_title.txt)" >> "$GITHUB_OUTPUT"
         
@@ -77,17 +86,25 @@ jobs:
       if: steps.playwright.outcome == 'failure'
       run: |
         mkdir -p .github/issue-screenshots
-        # Find the first screenshot in test-results
-        SCREENSHOT=$(find test-results -name "*-failure.png" | head -n 1)
-        if [ -n "$SCREENSHOT" ]; then
-          cp "$SCREENSHOT" .github/issue-screenshots/failure-${{ github.run_id }}.png
+        i=1
+        for SCREENSHOT in test-results/*-failure.png; do
+          if [ -f "$SCREENSHOT" ]; then
+            DEST=".github/issue-screenshots/failure-${{ github.run_id }}-${i}.png"
+            cp "$SCREENSHOT" "$DEST"
+            git add "$DEST"
+            i=$((i+1))
+          fi
+        done
+        
+        if [ $i -gt 1 ]; then
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/issue-screenshots/failure-${{ github.run_id }}.png
-          git commit -m "Add test failure screenshot for run ${{ github.run_id }}"
+          git commit -m "Add test failure screenshots for run ${{ github.run_id }}"
           git push
+          echo "SCREENSHOT_COUNT=$((i-1))" >> "$GITHUB_ENV"
         else
           echo "No screenshot found."
+          echo "SCREENSHOT_COUNT=0" >> "$GITHUB_ENV"
         fi
 
     - name: Create GitHub Issue with screenshot
@@ -103,8 +120,14 @@ jobs:
           const testTitle = process.env.TEST_TITLE;
           const testError = process.env.TEST_ERROR;
           const branch = context.ref.replace('refs/heads/', '');
-          const imageUrl = `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${branch}/.github/issue-screenshots/failure-${runId}.png`;
           const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
+          
+          const count = parseInt(process.env.SCREENSHOT_COUNT || '0', 10);
+          const screenshotsMd = [];
+          for (let i = 1; i <= count; i++) {
+             const imgUrl = `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${branch}/.github/issue-screenshots/failure-${runId}-${i}.png`;
+             screenshotsMd.push(`![Failure Screenshot ${i}](${imgUrl})`);
+          }
 
           await github.rest.issues.create({
             owner: context.repo.owner,
@@ -116,7 +139,7 @@ jobs:
               `**Test:** ${testTitle}`,
               '',
               '**Error Details:**',
-              '<details><summary>Click to expand error</summary>',
+              '<details><summary>Click to expand errors</summary>',
               '',
               '```text',
               testError,
@@ -124,7 +147,7 @@ jobs:
               '',
               '</details>',
               '',
-              `![Failure Screenshot](${imageUrl})`,
+              ...screenshotsMd,
               '',
               `[View full workflow run & download test results](${runUrl})`,
               `Triggered by: @${context.actor}`
