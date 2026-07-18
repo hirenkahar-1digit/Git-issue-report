@@ -4,7 +4,10 @@ export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
   retries: 0,
-  reporter: [['html', { open: 'never' }], ['list']],
+  reporter: [
+    ['list'],
+    ['json', { outputFile: 'test-results.json' }]
+  ],
 
   use: {
     baseURL: process.env.BASE_URL || 'https://example.com',
