@@ -26,33 +26,52 @@ jobs:
       run: npx playwright test
       continue-on-error: true
 
-    - name: Extract failed test title
+    - name: Upload test results artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-test-results
+        path: |
+          test-results.json
+          test-results/
+        retention-days: 30
+
+    - name: Extract failed test details
       id: extract
       if: steps.playwright.outcome == 'failure'
       run: |
-        TITLE=$(node -e "
+        node -e "
           const fs = require('fs');
           const results = JSON.parse(fs.readFileSync('test-results.json', 'utf8'));
 
-          function findFailedTitle(suites) {
+          function findFailedTest(suites) {
             for (const suite of suites) {
               for (const spec of suite.specs || []) {
                 for (const test of spec.tests || []) {
-                  const failed = test.results?.some(r => r.status !== 'passed');
-                  if (failed) return spec.title;
+                  const failedResult = test.results?.find(r => r.status !== 'passed');
+                  if (failedResult) return { title: spec.title, error: failedResult.error?.message || 'No error message' };
                 }
               }
               if (suite.suites) {
-                const nested = findFailedTitle(suite.suites);
+                const nested = findFailedTest(suite.suites);
                 if (nested) return nested;
               }
             }
             return null;
           }
 
-          console.log(findFailedTitle(results.suites) || 'Unknown test');
-        ")
-        echo "test_title=$TITLE" >> "$GITHUB_OUTPUT"
+          const failed = findFailedTest(results.suites);
+          const title = failed ? failed.title : 'Unknown test';
+          const errorMsg = failed ? failed.error : 'No error details found.';
+          
+          fs.writeFileSync('test_title.txt', title);
+          fs.writeFileSync('test_error.txt', errorMsg);
+        "
+        echo "test_title=$(cat test_title.txt)" >> "$GITHUB_OUTPUT"
+        
+        echo 'test_error<<EOF' >> "$GITHUB_OUTPUT"
+        cat test_error.txt >> "$GITHUB_OUTPUT"
+        echo 'EOF' >> "$GITHUB_OUTPUT"
 
     - name: Commit and push screenshot
       if: steps.playwright.outcome == 'failure'
@@ -77,10 +96,12 @@ jobs:
       env:
         RUN_ID: ${{ github.run_id }}
         TEST_TITLE: ${{ steps.extract.outputs.test_title }}
+        TEST_ERROR: ${{ steps.extract.outputs.test_error }}
       with:
         script: |
           const runId = process.env.RUN_ID;
           const testTitle = process.env.TEST_TITLE;
+          const testError = process.env.TEST_ERROR;
           const branch = context.ref.replace('refs/heads/', '');
           const imageUrl = `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${branch}/.github/issue-screenshots/failure-${runId}.png`;
           const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
@@ -94,9 +115,18 @@ jobs:
               '',
               `**Test:** ${testTitle}`,
               '',
+              '**Error Details:**',
+              '<details><summary>Click to expand error</summary>',
+              '',
+              '```text',
+              testError,
+              '```',
+              '',
+              '</details>',
+              '',
               `![Failure Screenshot](${imageUrl})`,
               '',
-              `[View full workflow run](${runUrl})`,
+              `[View full workflow run & download test results](${runUrl})`,
               `Triggered by: @${context.actor}`
             ].join('\n')
           });
