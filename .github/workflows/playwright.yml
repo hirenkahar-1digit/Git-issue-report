@@ -21,9 +21,9 @@ jobs:
       run: npm ci
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
-    - name: Run Playwright tests
+    - name: Run Playwright tests 
       id: playwright
-      run: npx playwright test
+      run: npx playwright test --workers=1
       continue-on-error: true
 
     - name: Upload test results artifact
