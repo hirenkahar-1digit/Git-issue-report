@@ -28,7 +28,7 @@ test.describe('Login page UI', () => {
   test("Should display Login label properly ", async () => {
 
     await expect(loginPage.loginlabel).toBeVisible({ timeout: 5000 });
-    await expect(loginPage.loginlabel).toHaveText(/Login/, { timeout: 5000 });
+    await expect(loginPage.loginlabel).toHaveText(/Logintest/, { timeout: 5000 });
     console.log("Login label is verified")
 
   });
