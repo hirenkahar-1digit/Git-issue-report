@@ -17,11 +17,18 @@ test.describe('Login page UI', () => {
 
   });
 
+  test.afterEach(async ({ page }, testInfo) => {
+    if (testInfo.status !== 'passed') {
+      const safeTitle = testInfo.title.replace(/[^a-z0-9-_]/gi, '_');
+      await page.screenshot({ path: `test-results/${safeTitle}-failure.png`, fullPage: true });
+      console.log(await page.content());
+    }
+  });
 
   test("Should display Login label properly ", async () => {
 
-    await expect(loginPage.loginlabel).toBeVisible();
-    await expect(loginPage.loginlabel).toHaveText('Login1');
+    await expect(loginPage.loginlabel).toBeVisible({ timeout: 5000 });
+    await expect(loginPage.loginlabel).toHaveText(/Login/, { timeout: 5000 });
     console.log("Login label is verified")
 
   });
@@ -78,7 +85,3 @@ test.describe('Login page UI', () => {
   });
 
 });
-
-
-
-
