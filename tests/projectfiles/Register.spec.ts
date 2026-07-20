@@ -15,12 +15,18 @@ test.describe('Register page UI', () => {
     });
 
   });
-
+  test.afterEach(async ({ page }, testInfo) => {
+    if (testInfo.status !== 'passed') {
+      const safeTitle = testInfo.title.replace(/[^a-z0-9-_]/gi, '_');
+      await page.screenshot({ path: `test-results/${safeTitle}-failure.png`, fullPage: true });
+      console.log(await page.content());
+    }
+  });
 
   test("Should display Create account label properly ", async () => {
 
     await expect(registerPage.registerlabel).toBeVisible();
-    await expect(registerPage.registerlabel).toHaveText('Create account1');
+    await expect(registerPage.registerlabel).toHaveText('Create accounttest');
     console.log("Create account label is verified")
 
   });
