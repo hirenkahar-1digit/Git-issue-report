@@ -50,7 +50,9 @@ jobs:
                 for (const test of spec.tests || []) {
                   const failedResult = test.results?.find(r => r.status !== 'passed');
                   if (failedResult) {
-                     failedTests.push({ title: spec.title, error: failedResult.error?.message || 'No error message' });
+                     const rawError = failedResult.error?.message || 'No error message';
+                     const cleanError = rawError.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '');
+                     failedTests.push({ title: spec.title, error: cleanError });
                   }
                 }
               }
